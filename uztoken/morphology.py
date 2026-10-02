@@ -41,6 +41,19 @@ _MORPHOPHONOLOGICAL_MAP: Dict[str, str] = {
     "tayog'": "tayoq",
     "o'rtog'": "o'rtoq",
     "tirnog'": "tirnoq",
+    # k -> gʻ alternation before 3rd-person possessive -i: burchak+i -> burchag'i
+    "burchag'": "burchak",
+    "chaqmag'": "chaqmog'",
+    "ko'zlag'": "ko'zak",
+    "tizmag'": "tizmoq",
+}
+
+# Tutuq belgisi bilan yoziladigan tana so'zlar (hunspell bazasida yo'q bo'lsa qo'shiladi)
+_TUTUQ_WORDS = {
+    "san'a", "san'at", "san'atchi", "mas'ul", "mas'uliyat", "ma'no", "ma'noli",
+    "a'lo", "ba'zi", "la'nat", "sa'ol", "qa'ba", "qi'ya", "si'ra", "ti'ro",
+    "e'tibor", "e'tiroz", "e'tiqod", "e'jodkor", "o'tkaz", "qis'm", "qism",
+    "his'sira", "mal'a", "zal'a", "gul'ori",
 }
 
 @dataclass
@@ -161,6 +174,15 @@ class MorphAnalyzer:
         results.sort(key=lambda r: r.confidence, reverse=True)
         return results[:max_results]
 
+    # Suffix formalarini keyinchalik _is_bare_suffix orqali tekshiramiz
+    _SUFFIX_FORMS: Optional[Set[str]] = None
+
+    def _is_bare_suffix(self, candidate: str) -> bool:
+        """Agar butin so'z oddiy qo'shimcha bo'lsa (masalan 'lar', 'dan') True."""
+        if MorphAnalyzer._SUFFIX_FORMS is None:
+            MorphAnalyzer._SUFFIX_FORMS = {s["text"] for s in get_suffix_variants()}
+        return candidate in MorphAnalyzer._SUFFIX_FORMS
+
     def _lookup_stem(self, candidate: str, allow_morphophonology: bool = True) -> Optional[str]:
         if candidate in self.dictionary:
             return candidate
@@ -168,16 +190,26 @@ class MorphAnalyzer:
         if not allow_morphophonology:
             return None
 
+        # 0. Apostrof variantlari normalizatsiyasi: lug'at 'bogʻ' ni saqlagan bo'lsa,
+        #    nomdal harflari bilan kelgan nom/nasab so'zlarni ('O'zbekiston') tiklaymiz.
+        if "ʻ" in candidate or "ʼ" in candidate:
+            ascii_c = candidate.replace("ʻ", "'").replace("ʼ", "'")
+            for alt in (ascii_c, ascii_c.replace("'", "")):
+                if len(alt) >= 3 and alt in self.dictionary:
+                    return alt
+
         # 1. Morphophonological pre-generated map (shahr -> shahar, qishlog' -> qishloq)
         if candidate in _MORPHOPHONOLOGICAL_MAP:
             restored = _MORPHOPHONOLOGICAL_MAP[candidate]
             if restored in self.dictionary:
                 return restored
 
-        # 2. Dynamic alternation: -gʻ -> -q, -g -> -k
+        # 2. Dynamic alternation: -gʻ -> -q / -k, -g -> -k
         if candidate.endswith("gʻ") or candidate.endswith("g'"):
             alt_q = candidate[:-2] + "q"
             if alt_q in self.dictionary: return alt_q
+            alt_k = candidate[:-2] + "k"
+            if alt_k in self.dictionary: return alt_k
         if candidate.endswith("g"):
             alt_k = candidate[:-1] + "k"
             if alt_k in self.dictionary: return alt_k
