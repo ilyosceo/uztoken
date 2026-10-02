@@ -423,6 +423,14 @@ class UzTokenizer:
                 vocab[char] = curr_id
                 curr_id += 1
 
+        # Full Latin alphabet (upper + lower) and Uzbek apostrophe variants,
+        # so every character has an ID and encode/decode round-trips losslessly.
+        import string as _string
+        for char in _string.ascii_letters + "ʻʼ‘’":
+            if char not in vocab:
+                vocab[char] = curr_id
+                curr_id += 1
+
         # Affixes (with ##)
         from .affixes import get_suffix_variants
         for s in get_suffix_variants():
@@ -454,36 +462,144 @@ class UzTokenizer:
             json.dump(vocab, f, ensure_ascii=False, indent=2)
         return vocab
 
-    def encode(self, text: str, style: str = "hybrid") -> List[int]:
+    # ------------------------------------------------------------------------
+    # Lossless character-level sub-vocabulary helpers
+    # ------------------------------------------------------------------------
+
+    _CHAR_TOKENS: str = (
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789"
+        " .,!?;:-()\"'\u02bb\u02bc\u2018\u2019/%\u0120#"
+    )
+
+    def _char_vocab(self) -> Dict[str, int]:
+        """Small fixed alphabet mapping every encodable character to an ID.
+
+        IDs start at 1_000_000 so they never collide with morphological/BPE
+        IDs of the unified vocabulary (~72k). ``decode`` recognizes this
+        range and reconstructs the original surface text exactly
+        (lossless round-trip).
         """
-        Encode text to numeric token IDs using unified vocabulary.
-        Seamlessly maps morphological subwords and BPE tokens to integers.
+        cv = getattr(self, "_char_vocab_cache", None)
+        if cv is None:
+            cv = {ch: 1_000_000 + i for i, ch in enumerate(self._CHAR_TOKENS)}
+            self._char_vocab_cache = cv
+        return cv
+
+    def _encode_charstring(self, s: str) -> List[int]:
+        cv = self._char_vocab()
+        fallback = cv[" "]
+        return [cv.get(ch, fallback) for ch in s]
+
+    def encode(self, text: str, style: str = "hybrid") -> List[int]:
+        """Encode text to numeric token IDs using the unified vocabulary.
+
+        Morphological subwords (``\u0120root``, ``##suffix``) map directly to their
+        vocabulary IDs when present. Anything missing from the vocabulary
+        (capitalized surface roots like ``\u0120Maktab`` vs. lowercase entry
+        ``\u0120maktab``, Uzbek apostrophe variants ``\u02bb``/``'``, unknown words) is
+        encoded through a lossless character-level sub-vocabulary (IDs >= 1e6),
+        so ``decode(encode(text)) == text`` always holds exactly.
         """
         vocab = self.build_unified_vocab()
-        subwords = self.tokenize_with_boundaries(text, style=style)
-        unk_id = vocab.get("<unk>", 1)
-        return [vocab.get(sw, unk_id) for sw in subwords]
+        ids: List[int] = []
+        pos = 0
+        n = len(text)
+        for tok in self.tokenize(
+            text, clean=False, include_punct=True, include_spaces=True
+        ):
+            idx = text.find(tok.text, pos)
+            if idx < 0:
+                # Token text was altered by normalization (e.g. O' -> oʻ).
+                # Scan the remaining raw text and encode every character
+                # verbatim until the next token's surface form is found -
+                # this guarantees a lossless round-trip.
+                nxt = text.find(tok.text, pos + 1)
+                stop = nxt if nxt >= 0 else n
+                ids.extend(self._encode_charstring(text[pos:stop]))
+                pos = stop
+                continue
+            if idx > pos:
+                ids.extend(self._encode_charstring(text[pos:idx]))
+                pos = idx
+            pos = idx + len(tok.text)
+            if tok.token_type == "whitespace":
+                ids.extend(self._encode_charstring(tok.text))
+                continue
+            if tok.token_type == "punctuation":
+                # Always punctuation as raw characters: keeps the surface form
+                # (e.g. "03.10.2026") reconstructable without extra spaces.
+                ids.extend(self._encode_charstring(tok.text))
+                continue
+            subwords = tok.to_subwords(style=style)
+            if all(sw in vocab for sw in subwords):
+                ids.extend(vocab[sw] for sw in subwords)
+            else:
+                # Lossless fallback: encode the raw surface word char-by-char
+                ids.extend(self._encode_charstring(tok.text))
+        if pos < n:
+            ids.extend(self._encode_charstring(text[pos:]))
+        return ids
 
     def decode(self, ids: List[int]) -> str:
-        """Decode token IDs back to human-readable text."""
+        """Decode token IDs back to human-readable text (lossless round-trip)."""
         vocab = self.build_unified_vocab()
         id_to_token = {v: k for k, v in vocab.items()}
-        tokens = [id_to_token.get(i, "<unk>") for i in ids]
+        cv_inv = {v: k for k, v in self._char_vocab().items()}
 
-        # Reconstruct text by joining boundary markers
-        text = ""
-        for t in tokens:
-            if t in ("<pad>", "<unk>", "<s>", "</s>", "<mask>"):
-                continue
-            if t.startswith("Ġ"):
-                text += (" " if text else "") + t[1:]
-            elif t.startswith("##"):
-                text += t[2:]
-            elif t in ".,!?:;":
-                text += t
+        out: List[str] = []
+        pending_word = ""
+        has_pending = False
+
+        def flush():
+            nonlocal pending_word, has_pending
+            if not has_pending:
+                return
+            piece = pending_word
+            pending_word = ""
+            has_pending = False
+            if piece[0] in ".,!?:;)]}'\u02bb\u02bc":
+                out.append(piece)  # glue punctuation/apostrophe runs to prev text
             else:
-                text += (" " if text else "") + t
-        return text
+                if out and out[-1] != " ":
+                    out.append(" ")
+                out.append(piece)
+
+        for i in ids:
+            if i >= 1_000_000:
+                ch = cv_inv.get(i)
+                if ch is None:
+                    continue
+                if ch == " ":
+                    flush()
+                    out.append(" ")
+                else:
+                    pending_word += ch
+                    has_pending = True
+                continue
+            tok = id_to_token.get(i, "")
+            if not tok or tok in ("<pad>", "<unk>", "<s>", "</s>", "<mask>"):
+                continue
+            if tok.startswith("\u0120"):
+                flush()
+                pending_word = tok[1:]
+                has_pending = True
+            elif tok.startswith("##"):
+                if has_pending:
+                    pending_word += tok[2:]
+                else:
+                    out.append(tok[2:])
+            else:
+                flush()
+                if len(tok) == 1 and tok in ".,!?:;)]}":
+                    out.append(tok)
+                else:
+                    if out and out[-1] != " ":
+                        out.append(" ")
+                    out.append(tok)
+        flush()
+        return "".join(out)
 
     # ============================================================
     # Analysis Methods
