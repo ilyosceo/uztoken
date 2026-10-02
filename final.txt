@@ -1,0 +1,54 @@
+✅ 'Kvantdagi'                      -> kvant+da(case_loc)+gi(deriv_dagi)
+✅ "neyro-chirog'imizdagi"          -> chirogʻ+imiz(poss_1pl)+dagi(deriv_dagi) [+ Token('-', punctuation), Token('chirogʻimizdagi' → chirogʻ +imiz(1-shaxs ko'plik egalik) -> +dagi(olmosh qo'shimchasi (-dagi/-giki)))]
+❌ "yong'og'zorlarimizdan"          -> Token('yongʻogʻzorlarimizdan' → yongʻogʻzorlarimiz +dan(chiqish))
+✅ "sub'ektiv"                      -> subʼektiv
+✅ "ob'ektlarimizning"              -> obʼekt+lar(pl_lar)+imiz(poss_1pl)+ning(case_gen)
+✅ "ma'lumotlar"                    -> maʼlumot+lar(pl_lar)
+✅ 'bazasidagi'                     -> baza+si(poss_3sg)+dagi(deriv_dagi)
+✅ '2045-yilgi'                     -> yilgi [+ Token('-', punctuation), Token('yilgi' → yilgi [bare])]
+✅ 'arxivlanmagan'                  -> arxiv+lan(deriv_la)+magan(neg_ma)
+✅ "fayl'larni"                     -> fayl+lar(pl_lar)+ni(case_acc)
+❌ "o'qiyotganimizda,"              -> Token('oʻqiyotganimizda' → oʻqiyotganimiz +da(o'rin-payt))
+✅ "ko'rsatib"                      -> koʻrsat+ib(gerund_lab)
+✅ 'berolmaganingizdan'             -> berol+ma(neg_ma)+gan(partic_gan)+ingiz(poss_2pl)+dan(case_abl)
+✅ 'kelib'                          -> kelib
+✅ 'chiqib,'                        -> chiq+ib(gerund_lab) [+ Token(',', punctuation)]
+✅ 'dasturchilarimizning'           -> dastur+chi(deriv_chi)+lar(pl_lar)+imiz(poss_1pl)+ning(case_gen)
+❌ 'yozayotgan'                     -> Token('yozayotgan' → yozayot +gan(sifatdosh (o'tgan)))
+✅ 'skriptlarini'                   -> skript+lari(poss_3pl)+ni(case_acc)
+✅ 'qayta'                          -> qayt+a(tense_fut_a)
+✅ "ko'rib"                         -> koʻrib
+✅ 'chiqmaganligingizni'            -> chiq+magan(neg_ma)+lig(deriv_lik)+ingiz(poss_2pl)+ni(case_acc)
+✅ 'tushunmovchilikka'              -> tushunmovchilik+ka(case_dat)
+❌ "yo'ydik."                       -> Token('yoʻydik', word)
+✅ '3D-printerda'                   -> printer+da(case_loc) [+ Token('-', punctuation), Token('printerda' → printer +da(o'rin-payt))]
+✅ 'bosilgan'                       -> bosil+gan(partic_gan)
+✅ 'tuproqdan'                      -> tuproq+dan(case_abl)
+✅ 'yasalgan'                       -> yasal+gan(partic_gan)
+✅ "ko'piksimon"                    -> koʻpiksimon
+✅ 'qopqoqchalarning'               -> qopqoqcha+lar(pl_lar)+ning(case_gen)
+❌ '99,9%i'                         -> Token('99', word)
+✅ 'yaroqsiz'                       -> yaroq+siz(deriv_siz)
+✅ "bo'lib"                         -> boʻlib
+✅ 'chiqqanligi'                    -> chiq+qan(partic_gan)+lig(deriv_lik)+i(poss_3sg)
+✅ 'sababli,'                       -> sababli [+ Token(',', punctuation)]
+✅ 'tasodifan'                      -> tasodifan
+✅ 'yutib'                          -> yut+ib(gerund_lab)
+✅ 'yuborgan'                       -> yubor+gan(partic_gan)
+✅ 'mikrochiplarini'                -> mikrochip+lari(poss_3pl)+ni(case_acc)
+✅ 'qaytarganingizdami'             -> qaytar+gan(partic_gan)+ingiz(verb_pers_2pl)+da(part_da)+mi(part_mi)
+✅ 'yoki'                           -> yoki
+✅ 'shunchaki'                      -> shunchaki
+✅ "o'zgartirib"                    -> oʻzgar+tir(voice_dir)+ib(gerund_ib)
+✅ "bo'lmasligini"                  -> boʻlmas+lig(deriv_lik)+i(poss_3sg)+ni(case_acc)
+✅ 'bilganimizdami,'                -> bilgan+imiz(verb_pers_1pl)+da(part_da)+mi(part_mi) [+ Token(',', punctuation)]
+✅ 'aniq'                           -> aniq
+✅ 'ayta'                           -> ayta
+✅ 'olmaysiz;'                      -> ol+maysiz(neg_ma) [+ Token(';', punctuation)]
+✅ "mas'uliyatsizlikning"           -> masʼuliyat+siz(deriv_siz)+lik(deriv_lik)+ning(case_gen)
+✅ 'bu'                             -> bu
+✅ 'darajasi'                       -> daraja+si(poss_3sg)
+✅ "e'tiqodimizga"                  -> eʼtiqod+imiz(poss_1pl)+ga(case_dat)
+✅ 'zid!'                           -> zid [+ Token('!', punctuation)]
+====================================================================================================
+Jami: 52 | Morf tahlil topildi: 47 | Topilmadi: 5
