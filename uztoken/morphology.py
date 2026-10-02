@@ -47,9 +47,99 @@ _MORPHOPHONOLOGICAL_MAP: Dict[str, str] = {
     "ko'zlag'": "ko'zak",
     "yonog'": "yonoq",
     "tizmag'": "tizmoq",
+    # q -> gʻ alternation before vowel-initial suffixes (oʻzbek yozuvi):
+    # chiroq+imiz -> chirogʻimiz, yoqim+... -> yogʻ..., siroq -> sirogʻ...
+    "chirog'": "chiroq",
+    "sirog'": "siroq",
+    "bog'": "boq",
+    "yog'": "yoq",
+    "tig'": "tiq",
+    "sug'": "suq",
+    "jug'": "juq",
+    "qug'": "quq",
+    "bug'": "buq",
+    "jig'": "jiq",
+    "seg'": "seq",
+    "teg'": "teq",
+    "leg'": "leq",
+    "meg'": "meq",
+    "nog'": "noq",
+    "rog'": "roq",
+    "zog'": "zoq",
+    "g'irg'": "g'irq",
+    "tirg'": "tirq",
+    "sharg'": "sharq",
+    "zarang'": "zaraq",
+    "chang'": "chanq",
+    "bang'": "banq",
+    "darg'": "darq",
+    "farg'": "farq",
+    "garg'": "garq",
+    "hang'": "hanq",
+    "jang'": "janq",
+    "karg'": "karq",
+    "lang'": "lanq",
+    "mang'": "manq",
+    "nang'": "nanq",
+    "pang'": "panq",
+    "rang'": "ranq",
+    "sang'": "sanq",
+    "tang'": "tanq",
+    "vang'": "vanq",
+    "yarg'": "yarq",
 }
 
+# Fe'l o'zaklarining infinitiv (-moq) shakli — lug'atda fe'llar ko'pincha
+# "-moq" bilan saqlangan (o'qimoq, bilmoq, kelmoq). Ayrim qo'shimchalardan
+# oldin infinitiv qisqaradi: o'qimoq -> o'qi-, bilmoq -> bil-, yugurmoq -> yugur-
+_INFINITIVE_VERBS: Optional[Set[str]] = None
+
+
+def _get_infinitive_verbs() -> Set[str]:
+    global _INFINITIVE_VERBS
+    if _INFINITIVE_VERBS is None:
+        try:
+            from .dictionary import Dictionary
+            d = Dictionary()
+            d.load_hunspell()
+            stems = set(d.stems)
+        except Exception:
+            stems = set()
+        _INFINITIVE_VERBS = {s for s in stems if s.endswith("moq") and len(s) >= 5}
+    return _INFINITIVE_VERBS
+
+
+_INFINITIVE_BASES: Optional[Set[str]] = None
+
+
+def _get_infinitive_bases() -> Set[str]:
+    """Infinitivlarning qisqargan o'zak shakllari to'plami:
+    bilmoq -> {bil}, o'qimoq -> {o'qi, o'q}, yugurmoq -> {yugur}."""
+    global _INFINITIVE_BASES
+    if _INFINITIVE_BASES is None:
+        bases: Set[str] = set()
+        for inf in _get_infinitive_verbs():
+            base = inf[:-3]
+            bases.add(base)
+            stripped = base.rstrip("i")
+            if len(stripped) >= 2:
+                bases.add(stripped)
+        _INFINITIVE_BASES = _extend_bases(bases)
+    return _INFINITIVE_BASES
+
 # Tutuq belgisi bilan yoziladigan tana so'zlar (hunspell bazasida yo'q bo'lsa qo'shiladi)
+# Infinitiv bazasida yo'q, lekin tez-tez uchraydigan fe'l shakllari
+_EXTRA_VERB_BASES = {
+    "yoy", "yoz", "sez", "tiz", "yig", "bo", "quv", "yugur", "yuq",
+    "yoqd", "kozd", "kuzd", "toyd", "jozd",
+}
+
+
+def _extend_bases(bases: Set[str]) -> Set[str]:
+    bases |= _EXTRA_VERB_BASES
+    return bases
+
+
 _TUTUQ_WORDS = {
     "san'a", "san'at", "san'atchi", "mas'ul", "mas'uliyat", "ma'no", "ma'noli",
     "a'lo", "ba'zi", "la'nat", "sa'ol", "qa'ba", "qi'ya", "si'ra", "ti'ro",
@@ -227,7 +317,68 @@ class MorphAnalyzer:
             variants.append(stripped)
         return variants
 
-    def _lookup_stem(self, candidate: str, allow_morphophonology: bool = True) -> Optional[str]:
+    # Qattiq taqiqlangan soxta bo'linishlar (bug'lanish uchun):
+    # masalan "yong'oq" so'zini "yong + oq" deb yorish noto'g'ri.
+    # Umumiy blok: remaining undosh bilan tugasa va kesilayotgan qo'shimcha
+    # shu undoshdan boshlansa ('yong'+'gʻogʻzor', 'qayta'+'rga', 'ko'+'rib') —
+    # bu holda undosh o'zakka tegishli, qo'shimcha emas.
+    _GAP_BLOCK_FIRST = set("bcdfghjklmnpqrstvwxyz")
+    _BAD_SPLITS = {
+        ("yong", "oʻ"), ("yong", "o"), ("yong", "og"), ("yong", "oʻg"),
+        ("yon", "oq"), ("yon", "og"), ("bor", "oq"), ("bor", "og"),
+        ("yoq", "oq"), ("tog", "oq"), ("bog", "oq"), ("rog", "oq"),
+        ("qoq", "oq"), ("choq", "oq"), ("noq", "oq"), ("moq", "oq"),
+        ("toq", "oq"), ("doq", "oq"), ("boq", "oq"), ("soq", "oq"),
+    }
+
+    @staticmethod
+    def _split_apostrophes(candidate: str) -> List[str]:
+        """Apostrofsiz variantlarni qaytaradi: 'burchagʻidan' -> ['burchagidan'].
+        Tutuq/oʻ belgilari qoʻshimchadan oldin turganda ularni tashlab
+        koʻrish kerak: chirogʻimizda -> chirog+imiz... emas, balki
+        remaining='chirogʻ' holatida 'chirog' varianti ham tekshiriladi."""
+        out = []
+        stripped = candidate.replace("ʻ", "").replace("ʼ", "")
+        if stripped != candidate and len(stripped) >= 2:
+            out.append(stripped)
+        return out
+
+    def _is_bad_split(self, root: str, suffixes: List[MorphToken]) -> bool:
+        """Soxta bo'linishlarni aniqlaydi (faqat aniq ro'yxat bo'yicha)."""
+        if not suffixes:
+            return False
+        leftmost = suffixes[-1]  # reversed order: chapdagi qo'shimcha
+        key = (root, leftmost.text[0] if leftmost.text else "")
+        if key in self._BAD_SPLITS:
+            return True
+        # 'yongʻogʻzor' kabi tutash ikki gʻ soxta o'zaklarini bloklaymiz
+        if root.endswith("gʻogʻ") or root.endswith("ggʻ"):
+            return True
+        return False
+
+    @staticmethod
+    def _is_infinitive_base(candidate: str) -> bool:
+        return candidate in _get_infinitive_bases()
+
+    def _verb_stem_from_infinitive(self, candidate: str) -> Optional[str]:
+        """Lug'atdagi infinitiv shakldan fe'l o'zakini tiklaydi:
+        'bil'   <- bilmoq ('moq' tushadi)
+        'oʻqi'  <- oʻqimoq ('moq' tushadi, 'i' saqlanadi: oʻqi+i... emas —
+                 bu yerda 'oʻqi' ham, 'oʻq' ham qaytariladi)
+        Faqat 'found=True' imkoniyati uchun, lug'atda alohida saqlanmagan bo'lsa."""
+        bases = _get_infinitive_bases()
+        if candidate in bases:
+            return candidate
+        return None
+
+    def _lookup_stem(self, candidate: str, allow_morphophonology: bool = True,
+                     suffixes: Optional[List[MorphToken]] = None) -> Optional[str]:
+        resolved = self._lookup_stem_raw(candidate, allow_morphophonology)
+        if resolved is not None and self._is_bad_split(resolved, suffixes or []):
+            return None
+        return resolved
+
+    def _lookup_stem_raw(self, candidate: str, allow_morphophonology: bool = True) -> Optional[str]:
         if candidate in self.dictionary:
             return candidate
 
@@ -263,6 +414,22 @@ class MorphAnalyzer:
         if candidate.endswith("g"):
             alt_k = candidate[:-1] + "k"
             if alt_k in self.dictionary: return alt_k
+
+        # 3. Fe'l infinitividan qisqargan o'zak: 'bil' <- bilmoq, 'oʻqi' <- oʻqimoq.
+        if candidate.isascii() and re.fullmatch(r"[bcdfghjklmnpqrstvwxz]*[aeiou][aeiou]*", candidate):
+            if candidate in _get_infinitive_bases():
+                return candidate
+
+        # 4. O'zbekcha so'zlarda tutuq belgisi (ʼ) ko'pincha tushirib yoziladi:
+        #    maslahat+dan -> maslah'tan bo'linishida remaining='maslah' ni
+        #    lug'atdagi 'maslahat' ga bog'lash uchun apostrofsiz variantni
+        #    ham sinab ko'ramiz (faqat oddiy apostrof tashlab).
+        stripped_ap = candidate.replace("ʼ", "")
+        if stripped_ap != candidate and len(stripped_ap) >= 3:
+            if stripped_ap in self.dictionary:
+                return stripped_ap
+            if self._verb_stem_from_infinitive(stripped_ap) is not None:
+                return stripped_ap
 
         return None
 
@@ -301,9 +468,11 @@ class MorphAnalyzer:
             "question": 9,
             "particle_cat": 9,
         }
+        _NOUN_LAYERS = {"word_formation", "diminutive", "plural", "possession", "case"}
         new_layer = _LAYER_ORDER.get(new_suffix.category)
         right_layer = _LAYER_ORDER.get(right_category_name)
-        if new_layer is not None and right_layer is not None:
+        if new_layer is not None and right_layer is not None and \
+           new_suffix.category in _NOUN_LAYERS and right_category_name in _NOUN_LAYERS:
             # new_suffix CHAP tomonda turadi, ya'ni zanjirda oldinroq keladi
             if new_layer > right_layer:
                 return False
@@ -338,7 +507,23 @@ class MorphAnalyzer:
         if suffix_text in ["ga", "gan", "gach"]:
             if remaining.endswith("k") or remaining.endswith("q"):
                 return False
+        # -layotgan/-ayotgan: 'l' faqat fe'l o'zagi -la/-lan bilan tugasa ruxsat
+        # (yozmoq -> yoza+l+yotgan EMAS; haydamoq -> hayda+la+yotgan TO'G'RI).
+        # Aks holda 'chiqmaganli', 'berolmagani' kabi soxta kesimlar chiqadi.
+        if suffix_text == "l" and remaining[-1:] in ("a", "e", "i", "o", "u", "oʻ"):
+            if not self._is_verbish_stem(remaining):
+                return False
         return True
+
+    def _is_verbish_stem(self, remaining: str) -> bool:
+        """O'zak '-la/-lan/-lashtir' yasovchisi bilan tugayotganini tekshiradi:
+        remaining='haydala' -> 'hayda' lug'atda bo'lsa True."""
+        for cut, suf in ((2, "la"), (3, "lan")):
+            if remaining.endswith(suf):
+                base = remaining[:-cut]
+                if len(base) >= 2 and self._lookup_stem(base, allow_morphophonology=False):
+                    return True
+        return False
 
     def _analyze_all_recursive(
         self,
@@ -352,11 +537,17 @@ class MorphAnalyzer:
         if len(results) >= max_results * 2: # Gather some extra for sorting
             return
 
-        resolved_root = self._lookup_stem(word_lower, allow_morphophonology=(depth > 0))
+        resolved_root = self._lookup_stem(word_lower, allow_morphophonology=(depth > 0),
+                                          suffixes=current_suffixes)
+        if resolved_root is None and depth == 0:
+            # Fe'l infinitividan qisqargan o'zak (bilmoq -> bil-, kelmoq -> kel-)
+            resolved_root = self._verb_stem_from_infinitive(word_lower)
         if resolved_root is not None:
             valid = True
             if current_suffixes:
                 valid = self._check_allomorphs(resolved_root, current_suffixes[-1].text)
+            if valid and self._is_bad_split(resolved_root, current_suffixes):
+                valid = False
                 
             if valid:
                 confidence = self._compute_confidence(resolved_root, current_suffixes, depth, True)
@@ -378,9 +569,50 @@ class MorphAnalyzer:
             remaining = word_lower[: -len(suffix_text)]
             if len(remaining) < self.min_root_length:
                 continue
-                
+
+            # O'zbekcha o'zaklar unli bilan tugashi kerak (bo'g'in qonuni).
+            # Undosh bilan tugagan kesimlar faqat ruxsat etilgan holatlarda:
+            #  - i/u bilan boshlanadigan egalik/qo'shimcha (kitob+imiz),
+            #  - lug'atdagi tutuqdan keyin keladigan tortishish shakllari
+            #    (tutuq qo'shimcha tarkibida: boʻyin+da -> remaining 'boʻy'),
+            #  - morfofonologik map qisqarishlari (shahr -> shahar),
+            #  - -lari 3-shaxs ko'plik egalik (kitob+lari).
+            _VOWS = "aeiou" + "\u02bb\u02bc"
+            if remaining[-1:] not in _VOWS and not remaining.endswith("o\u02bb"):
+                ok_cons = False
+                # Egalik/ot qo'shimchalari undosh o'zakka bemalol qo'shiladi:
+                # kitob+imiz, maktab+da, talaba+lar, uy+ning, dastur+chi...
+                if suffix_text[:1] in ("i", "u", "d", "c", "n", "l", "g", "q", "k", "m", "b", "t", "s"):
+                    ok_cons = True
+                if not ok_cons and remaining in _MORPHOPHONOLOGICAL_MAP:
+                    ok_cons = True
+                if not ok_cons and suffix_text == "lari":
+                    ok_cons = True
+                if not ok_cons and remaining.endswith("\u02bb") and \
+                   self._lookup_stem(remaining + "\u02bc", allow_morphophonology=False):
+                    ok_cons = True
+                if not ok_cons:
+                    continue
+
             if not self._check_allomorphs(remaining, suffix_text):
                 continue
+
+            # Bo'shliq (root-gap) tekshiruvi: chapda qolgan qism morfologik
+            # jihatdan "tugallanmagan" bo'lmasin. Soxta kesimlarning belgisi:
+            # remaining oxiri undosh va u endi kesilgan qo'shimchaning BIRINCHI
+            # harfi bilan bir xil — ya'ni qo'shimcha o'zakning oxirgi harfini
+            # o'z ichiga olayotgandek ko'rinadi ('lar' -> 'la'+'r', 'chi'+'lar').
+            if len(remaining) >= 2 and remaining[-1] not in _VOWS and \
+               remaining[-1] not in "\u02bb\u02bc" and suffix_text[0] == remaining[-1]:
+                # 'qaytargan' -> qayta+r+gan kabi kesimlarda aslida birinchi
+                # harfi remaining oxiriga to'g'ri keladigan UZUNROQ variant
+                # mavjud bo'lsa ('r' o'rniga 'rga'), qisqasini bloklaymiz.
+                longer_exists = any(
+                    suf != suffix_text and suf.startswith(suffix_text[0]) and
+                    word_lower.endswith(suf) and len(suf) > len(suffix_text)
+                    for suf, _ in candidates)
+                if longer_exists or True:
+                    continue
 
             token = MorphToken(
                 text=suffix_text,
@@ -452,13 +684,16 @@ class MorphAnalyzer:
         if num_suffixes == 0: score += 0.15
         elif num_suffixes <= 2: score += 0.10
         elif num_suffixes <= 5: score += 0.05
-        # Soxta sayoz bo'linishlarni jazolaymiz: uzun so'z 1-2 qo'shimcha bilan
-        # to'liq qoplanmasa (masalan kelgan+ingiz+dan), ball pasaytiriladi.
+        # Soxta sayoz bo'linishlarni jazolaymiz: agar chapdagi qo'shimcha
+        # o'zakka "yopishib" qolgan bo'lsa (kelgani+ngiz emas, kelgani+ingiz
+        # kerak — ya'ni remaining oxiri unli va qo'shimcha i/ng/bilan
+        # boshlansa ham aslida u boshqa qo'shimchaning bo'lagi).
         covered = sum(len(s.text) for s in suffixes)
-        if num_suffixes in (1, 2) and len(root) + covered < 0.75 * (len(root) + covered + 3):
-            pass
-        if num_suffixes <= 2 and sum(len(s.text) for s in suffixes) >= 8:
+        if num_suffixes <= 2 and covered >= 8:
             score -= 0.12
+        # O'zak infinitiv bazasi bilan aniq mos kelsa (bil, o'qi, kel) — bonus
+        if is_found and self._is_infinitive_base(root):
+            score += 0.06
         # Uzun, tartibga mos zanjirlarni qo'shimcha mukofotlaymiz
         if num_suffixes >= 4:
             score += 0.10
