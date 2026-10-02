@@ -183,6 +183,49 @@ class MorphAnalyzer:
             MorphAnalyzer._SUFFIX_FORMS = {s["text"] for s in get_suffix_variants()}
         return candidate in MorphAnalyzer._SUFFIX_FORMS
 
+    def _apostrophe_variants(self, candidate: str) -> List[str]:
+        """oʻ/gʻ (U+02BB) va tutuq belgisi (U+02BC) farqi morfologik jihatdan
+        muhim emas — ikkala holatda ham barcha apostrof kombinatsiyalarini
+        sinab ko'ramiz. Masalan: bogʻlarimizda -> [bogʻ..., bogʼ...],
+        maʼnoda -> [maʼno..., maʻno...]. Shuningdek apostrofsiz variant ham."""
+        positions = [i for i, ch in enumerate(candidate) if ch in ("ʻ", "ʼ", "'")]
+        if not positions:
+            return []
+        import itertools
+        n = len(positions)
+        # Kartezian kombinatsiyalar sonini cheklaymiz (timeout xavfsizligi):
+        # 2^n <= 32 bo'lsa to'liad, aks holda faqat bittalik almashinuvlar.
+        if n <= 5:
+            combos = list(itertools.product(("ʻ", "ʼ"), repeat=n))
+        else:
+            combos = []
+            all_first = tuple(["ʻ"] * n)
+            all_second = tuple(["ʼ"] * n)
+            seen = set()
+            for base in (all_first, all_second):
+                if base not in seen:
+                    seen.add(base)
+                    combos.append(base)
+            for k in range(n):
+                for sym in ("ʻ", "ʼ"):
+                    lst = list(all_first)
+                    lst[k] = sym
+                    t = tuple(lst)
+                    if t not in seen:
+                        seen.add(t)
+                        combos.append(t)
+        variants: List[str] = []
+        for combo in combos:
+            chars = list(candidate)
+            for pos, sym in zip(positions, combo):
+                chars[pos] = sym
+            variants.append("".join(chars))
+        # 2) apostrofsiz variant (hunspell bazasi ba'zan tashlab yozgan bo'ladi)
+        stripped = candidate.replace("ʻ", "").replace("ʼ", "").replace("'", "")
+        if stripped != candidate:
+            variants.append(stripped)
+        return variants
+
     def _lookup_stem(self, candidate: str, allow_morphophonology: bool = True) -> Optional[str]:
         if candidate in self.dictionary:
             return candidate
@@ -190,13 +233,11 @@ class MorphAnalyzer:
         if not allow_morphophonology:
             return None
 
-        # 0. Apostrof variantlari normalizatsiyasi: lug'at 'bogʻ' ni saqlagan bo'lsa,
-        #    nomdal harflari bilan kelgan nom/nasab so'zlarni ('O'zbekiston') tiklaymiz.
-        if "ʻ" in candidate or "ʼ" in candidate:
-            ascii_c = candidate.replace("ʻ", "'").replace("ʼ", "'")
-            for alt in (ascii_c, ascii_c.replace("'", "")):
-                if len(alt) >= 3 and alt in self.dictionary:
-                    return alt
+        # 0. Apostrof variantlari: oʻ/gʻ vs tutuq belgisi farqini morfologik
+        #    tekshiruvda yumshatamiz — lug'atdagi haqiqiy shaklni qaytaramiz.
+        for alt in self._apostrophe_variants(candidate):
+            if len(alt) >= 2 and alt in self.dictionary:
+                return alt
 
         # 1. Morphophonological pre-generated map (shahr -> shahar, qishlog' -> qishloq)
         if candidate in _MORPHOPHONOLOGICAL_MAP:
@@ -237,6 +278,41 @@ class MorphAnalyzer:
         right_suffix = current_suffixes[-1]
         right_category_name = right_suffix.category
         
+        # --- Qattiq nom zanjiri qoidasi (ot => plural => poss => case => ...):
+        # PLURAL/POSSESSION/CASE/PARTICIPLE/MOOD/PERSON kabi infleksion
+        # qatlamlar faqat ruxsat etilgan tartibda kelishi kerak. Masalan
+        # bog'larimizda: +lar(plural) ni +imiz(poss) boshqaradi — bu to'g'ri;
+        # lekin 'bog'+a+r+imiz+da (tense+participle fe'l zanjiri) otga
+        # nisbatan noto'g'ri — quyidagi qatlam tartibi tekshiruvi uni bloklaydi.
+        _LAYER_ORDER = {
+            "word_formation": 0,
+            "diminutive": 0,
+            "plural": 1,
+            "possession": 2,
+            "case": 3,
+            "participle": 4,
+            "gerund": 4,
+            "tense": 5,
+            "mood": 6,
+            "negation": 6,
+            "voice": 7,
+            "person": 8,
+            "question": 9,
+            "particle_cat": 9,
+        }
+        new_layer = _LAYER_ORDER.get(new_suffix.category)
+        right_layer = _LAYER_ORDER.get(right_category_name)
+        if new_layer is not None and right_layer is not None:
+            # new_suffix CHAP tomonda turadi, ya'ni zanjirda oldinroq keladi
+            if new_layer > right_layer:
+                return False
+            # Bir xil qatlamdagi takrorlanishga faqat plural=>possessive
+            # aralash zanjirida (+lar+imiz+) ruxsat: oddiy ikki marta
+            # bir xil qatlamni (case+case) taqiqlaymiz.
+            if new_layer == right_layer and new_suffix.category == right_category_name \
+               and new_suffix.category in ("case", "tense"):
+                return False
+
         right_affix_obj = right_suffix.affix_obj
         if right_affix_obj and right_affix_obj.follows is not None:
             # new_suffix must be in the follows list of right_suffix
@@ -364,12 +440,17 @@ class MorphAnalyzer:
     def _compute_confidence(self, root: str, suffixes: List[MorphToken], depth: int, is_found: bool) -> float:
         score = 0.0
         if is_found: score += 0.5
-        score += min(0.3, len(root) * 0.05)
-        
+        # O'zak uzunligi bo'nusi: kichik o'zak + ulkan qo'shimcha bloki
+        # sun'iy ravishda yuqori ball olmasin — faqat 4 harfdan boshlab.
+        score += min(0.25, max(0, len(root) - 4) * 0.03)
+
         num_suffixes = len(suffixes)
-        if num_suffixes == 0: score += 0.2
-        elif num_suffixes <= 2: score += 0.15
-        elif num_suffixes <= 4: score += 0.1
+        # Har bir tasniflangan (follows-tartib tekshiruvidan o'tgan)
+        # qo'shimchaga alohida ball — chuqur morf zanjirni mukofotlaydi.
+        score += 0.08 * num_suffixes
+        if num_suffixes == 0: score += 0.15
+        elif num_suffixes <= 2: score += 0.10
+        elif num_suffixes <= 5: score += 0.05
         
         # Add a tiny amount for priority to break ties (e.g. lar plural vs lar person)
         for s in suffixes:
