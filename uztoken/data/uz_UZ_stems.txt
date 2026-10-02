@@ -29411,7 +29411,6 @@ kelaver
 kelaverish
 kelbat
 keldi
-kelgan
 kelgindi
 kelgusi
 kelha
@@ -77789,3 +77788,4 @@ zumda
 zurriyotli
 
 # === SOF O'ZBEK QO'SHIMCHALARI (kengaytirilgan baza) ===
+g'alab

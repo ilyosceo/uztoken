@@ -45,6 +45,7 @@ _MORPHOPHONOLOGICAL_MAP: Dict[str, str] = {
     "burchag'": "burchak",
     "chaqmag'": "chaqmog'",
     "ko'zlag'": "ko'zak",
+    "yonog'": "yonoq",
     "tizmag'": "tizmoq",
 }
 
@@ -451,13 +452,25 @@ class MorphAnalyzer:
         if num_suffixes == 0: score += 0.15
         elif num_suffixes <= 2: score += 0.10
         elif num_suffixes <= 5: score += 0.05
+        # Soxta sayoz bo'linishlarni jazolaymiz: uzun so'z 1-2 qo'shimcha bilan
+        # to'liq qoplanmasa (masalan kelgan+ingiz+dan), ball pasaytiriladi.
+        covered = sum(len(s.text) for s in suffixes)
+        if num_suffixes in (1, 2) and len(root) + covered < 0.75 * (len(root) + covered + 3):
+            pass
+        if num_suffixes <= 2 and sum(len(s.text) for s in suffixes) >= 8:
+            score -= 0.12
+        # Uzun, tartibga mos zanjirlarni qo'shimcha mukofotlaymiz
+        if num_suffixes >= 4:
+            score += 0.10
+        elif num_suffixes == 3:
+            score += 0.06
         
         # Add a tiny amount for priority to break ties (e.g. lar plural vs lar person)
         for s in suffixes:
             if s.affix_obj:
                 score += s.affix_obj.priority * 0.001
-                
-        return score
+
+        return max(0.0, min(score, 1.0))
 
 def create_analyzer(dictionary=None, load_hunspell=True, max_depth=15, use_trie=True) -> MorphAnalyzer:
     if dictionary is None:
