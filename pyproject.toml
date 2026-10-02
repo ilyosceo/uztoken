@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uztoken"
+version = "0.1.0"
+description = "O'zbek tili uchun morfologik tokenizatsiya kutubxonasi — Uzbek Morphological Tokenizer"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "UzToken Team"},
+]
+keywords = ["uzbek", "tokenizer", "morphology", "nlp", "uzbekistan", "agglutinative"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: C",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Linguistic",
+    "Natural Language :: Uzbek",
+]
+dependencies = []
+
+[project.optional-dependencies]
+fast = ["numpy>=1.21.0"]
+full = ["numpy>=1.21.0", "sentencepiece>=0.1.96"]
+dev = ["pytest>=7.0", "pytest-benchmark", "ruff"]
+
+[project.urls]
+Homepage = "https://github.com/uztoken/uztoken"
+Documentation = "https://uztoken.readthedocs.io"
+Repository = "https://github.com/uztoken/uztoken"
+
+[tool.setuptools.packages.find]
+include = ["uztoken*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
