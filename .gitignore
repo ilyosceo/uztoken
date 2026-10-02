@@ -25,3 +25,5 @@ clean_db.py
 test_*.py
 interactive.py
 setup_ext.py
+node_modules/
+.next/
