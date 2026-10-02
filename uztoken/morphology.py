@@ -204,6 +204,14 @@ class MorphAnalyzer:
             if restored in self.dictionary:
                 return restored
 
+        # 1.5. OOV nomlar/texnik so'zlar: apostrof + qo'shimcha (Python'da -> Python + da).
+        #      Agar candidate ichida tutuq belgisi bor va undan oldingi qism lotin nom bo'lsa,
+        #      apostrofdan keyingi qismni tashlab, asl nomni qaytarishga ruxsat beramiz.
+        for ap in ("ʼ", "ʻ", "’"):
+            if ap in candidate:
+                head = candidate.split(ap)[0]
+                if len(head) >= 3 and head.replace("'", "").isascii() and head not in self.dictionary:
+                    return head  # OOV nom — tokenizer uni BPE/subtoken sifatida ishlatadi
         # 2. Dynamic alternation: -gʻ -> -q / -k, -g -> -k
         if candidate.endswith("gʻ") or candidate.endswith("g'"):
             alt_q = candidate[:-2] + "q"

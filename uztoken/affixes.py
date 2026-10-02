@@ -54,6 +54,8 @@ _AFFIXES_DB: List[Affix] = [
     Affix("poss_1pl", "miz", "1-shaxs ko'plik egalik", "1st person plural possession", AffixType.INFLECTIONAL, AffixCategory.POSSESSION, ["miz", "imiz"], follows={AffixCategory.PLURAL, AffixCategory.WORD_FORMATION, AffixCategory.DIMINUTIVE, AffixCategory.PARTICIPLE, AffixCategory.MOOD}),
     Affix("poss_2pl", "ngiz", "2-shaxs ko'plik egalik", "2nd person plural possession", AffixType.INFLECTIONAL, AffixCategory.POSSESSION, ["ngiz", "ingiz"], follows={AffixCategory.PLURAL, AffixCategory.WORD_FORMATION, AffixCategory.DIMINUTIVE, AffixCategory.PARTICIPLE, AffixCategory.MOOD}),
     Affix("poss_3pl", "lari", "3-shaxs ko'plik egalik", "3rd person plural possession", AffixType.INFLECTIONAL, AffixCategory.POSSESSION, ["lari"], follows={AffixCategory.WORD_FORMATION, AffixCategory.DIMINUTIVE}), # lari already includes plural meaning conceptually but grammatically attaches to stem
+    # Egalik olmoshi (-niki): maktabnikida, telefonlarimizniki va h.k.
+    Affix("poss_niki", "niki", "egalik olmoshi (-niki)", "possessive pronoun -niki", AffixType.INFLECTIONAL, AffixCategory.POSSESSION, ["niki"], follows={AffixCategory.PLURAL, AffixCategory.POSSESSION, AffixCategory.WORD_FORMATION}, priority=6),
     
     # Noun - Cases (Kelishiklar)
     # Must be at the end of the noun phrase (after Plural, Possession)
@@ -118,6 +120,10 @@ _AFFIXES_DB: List[Affix] = [
     Affix("aux_kelib", "kelib", "yo'l fe'l shakli (-ib kelib)", "converb aux", AffixType.DERIVATIONAL, AffixCategory.VOICE, ["kelib", "ketib", "qo'yib", "qoyib"], priority=6),
     Affix("aux_ola", "ola", "mumkinlik yordamchisi (-ol-)", "potential aux", AffixType.DERIVATIONAL, AffixCategory.VOICE, ["oladigan", "olmaydigan", "olgan", "olmagan", "ola", "oli", "oloq"], priority=7),
     Affix("aux_kora", "ko'ra", "takrorlanish yordamchisi (-ib ko'ra)", "repetitive aux", AffixType.DERIVATIONAL, AffixCategory.VOICE, ["ko'ra", "koray", "bera", "beri", "qila", "qilay", "tura", "yura"], priority=6),
+
+    # Davomlik zamon qatlamari: -ayotgan / -ayotganingiz (o'qitayotganingizdan)
+    Affix("cont_yotgan", "yotgan", "davomlik sifatdoshi (-ayotgan/-oyotgan)", "progressive participle", AffixType.DERIVATIONAL, AffixCategory.PARTICIPLE, ["yotgan", "ayotgan", "oyotgan", "otgan"], priority=9),
+    Affix("cont_yotib", "yotib", "ravishdosh (-ayotib/-ab borib)", "converb borib", AffixType.DERIVATIONAL, AffixCategory.GERUND, ["yotib", "ayotib", "borib", "yuborib"], priority=5),
 
     # Particles
     Affix("part_ku", "ku", "yuklama", "particle", AffixType.PARTICLE, AffixCategory.PARTICLE_CAT, ["ku"]),
