@@ -13,7 +13,7 @@ import sys
 import os
 import time
 
-sys.path.insert(0, r"C:\Users\Администратор\.gemini\antigravity\scratch\uztoken")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from uztoken import UzTokenizer, BPETokenizer
 
