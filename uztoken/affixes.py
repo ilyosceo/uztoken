@@ -71,23 +71,23 @@ _AFFIXES_DB: List[Affix] = [
     Affix("evd_emish", "emish", "so'zlanuvchi (guvohlik)", "evidential", AffixType.INFLECTIONAL, AffixCategory.MOOD, ["emish", "emishlar"], priority=12),
 
     # Verb - Tense/Aspect
-    Affix("tense_past", "di", "o'tgan zamon", "past tense", AffixType.INFLECTIONAL, AffixCategory.TENSE, ["di", "ti"]),
+    Affix("tense_past", "di", "o'tgan zamon", "past tense", AffixType.INFLECTIONAL, AffixCategory.TENSE, ["di", "ti"], priority=9),
     Affix("tense_pres_yapti", "yapti", "hozirgi zamon", "present tense", AffixType.INFLECTIONAL, AffixCategory.TENSE, ["yapti", "yotir", "moqda", "yap"]),
     Affix("tense_fut_a", "a", "kelasi zamon", "future tense", AffixType.INFLECTIONAL, AffixCategory.TENSE, ["a", "y"]),
-    Affix("tense_pres_ydi", "ydi", "hozirgi-kelasi zamon", "present-future tense", AffixType.INFLECTIONAL, AffixCategory.TENSE, ["ydi", "di"]),
+    Affix("tense_pres_ydi", "ydi", "hozirgi-kelasi zamon", "present-future tense", AffixType.INFLECTIONAL, AffixCategory.TENSE, ["ydi", "adi", "edi", "di"], priority=9),
     
     # Verb - Participles
     Affix("partic_gan", "gan", "sifatdosh (o'tgan)", "participle (past)", AffixType.INFLECTIONAL, AffixCategory.PARTICIPLE, ["gan", "kan", "qan"], priority=8),
     # Participial genitive: kelgan+ingiz, yozmagan+lari kabi egalik qatlamiga yo'l ochadi
     Affix("partic_gen", "ning", "sifatdosh qaratqich", "participial genitive", AffixType.INFLECTIONAL, AffixCategory.PARTICIPLE, ["ning"], priority=8),
     Affix("partic_digan", "digan", "sifatdosh (hozirgi/kelasi)", "participle (present/future)", AffixType.INFLECTIONAL, AffixCategory.PARTICIPLE, ["adigan", "ydigan", "digan"]),
-    Affix("partic_ar", "ar", "sifatdosh", "participle", AffixType.INFLECTIONAL, AffixCategory.PARTICIPLE, ["ar", "r"]),
+    Affix("partic_ar", "ar", "sifatdosh", "participle", AffixType.INFLECTIONAL, AffixCategory.PARTICIPLE, ["ar"]),
     Affix("partic_mas", "mas", "sifatdosh (inkor)", "participle (negative)", AffixType.INFLECTIONAL, AffixCategory.PARTICIPLE, ["mas"]),
     
     # Verb - Gerunds
     Affix("gerund_lab", "lab", "ravishdosh (-lab/-ib/-lib/-yb)", "converb", AffixType.INFLECTIONAL, AffixCategory.GERUND, ["lab", "lib", "ib", "yb"], priority=6),
     Affix("gerund_qoyib", "qoyib", "ravishdosh (sura yo'li)", "converb (honorific)", AffixType.INFLECTIONAL, AffixCategory.GERUND, ["qo'yib", "qoyib"], priority=4),
-    Affix("gerund_ib", "ib", "ravishdosh", "gerund", AffixType.INFLECTIONAL, AffixCategory.GERUND, ["ib", "b"]),
+    Affix("gerund_ib", "ib", "ravishdosh", "gerund", AffixType.INFLECTIONAL, AffixCategory.GERUND, ["ib"]),
     Affix("gerund_gach", "gach", "ravishdosh", "gerund", AffixType.INFLECTIONAL, AffixCategory.GERUND, ["gach", "kach", "qach"]),
     Affix("gerund_guncha", "guncha", "ravishdosh", "gerund", AffixType.INFLECTIONAL, AffixCategory.GERUND, ["guncha", "kuncha", "quncha"]),
     

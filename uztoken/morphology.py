@@ -234,13 +234,23 @@ class MorphAnalyzer:
                 self._suffix_trie.insert(suf["text"], suf)
 
         self._cache: Dict[str, AnalysisResult] = {}
+        # O'zak uzunligi bo'nusi: 2-3 harfli soxta o'zaklar (qo, bi, ko, yu)
+        # aslida uzunroq o'zakning bir qismi — ularni qisqa deb jazolaymiz.
+        self._SHORT_PENALTY_STEMS = {"qo", "bi", "ko", "yu", "yo", "bo", "to", "do"}
+
+    def _penalize_short_root(self, res: 'AnalysisResult') -> None:
+        if res.root in self._SHORT_PENALTY_STEMS and len(res.suffixes) >= 1:
+            res.confidence -= 0.35
 
     def analyze(self, word: str) -> AnalysisResult:
         word_lower = normalize_uzbek(word)
         if word_lower in self._cache:
             return self._cache[word_lower]
 
-        results = self.analyze_all(word_lower, max_results=1)
+        results = self.analyze_all(word_lower, max_results=8)
+        # Qisqa soxta o'zaklarni jazolaymiz (qo+la+di emas, qol+adi kerak)
+        for r in results:
+            self._penalize_short_root(r)
         if results:
             result = results[0]
         else:
@@ -331,6 +341,22 @@ class MorphAnalyzer:
         ("toq", "oq"), ("doq", "oq"), ("boq", "oq"), ("soq", "oq"),
     }
 
+    # Butun so'z bo'lishi kerak bo'lgan, lekin qisqa o'zak + qo'shimcha
+    # sifatida xato ajraladigan yopishqoq shakllar (fe'l birikmalari va
+    # ravishlar). Ularni lug'atda bo'lsa ham bo'lishga qo'ymaymiz.
+    _ATOMIC_WORDS = {
+        "qayta", "keyin", "lekin", "chunki", "garchi", "ammo", "agar",
+        "shunchaki", "aniq", "sodda", "murakkab", "chiroyli", "ayrim",
+        "avval", "kemtin", "daf'atan", "birdaniga",
+    }
+    # So'z bo'linishi mumkin bo'lgan istisnolar: 'ko'rib -> ko'r+ib',
+    # 'kelib -> kel+ib' — chunki bu fe'l o'zak + ravishdosh.
+    _FORCED_SPLITS = {
+        "koʻrib": ("koʻr", "ib"), "korib": ("kor", "ib"),
+        "kelib": ("kel", "ib"), "ketib": ("ket", "ib"),
+        "qolib": ("qol", "ib"), "kelib": ("kel", "ib"),
+    }
+
     @staticmethod
     def _split_apostrophes(candidate: str) -> List[str]:
         """Apostrofsiz variantlarni qaytaradi: 'burchagʻidan' -> ['burchagidan'].
@@ -379,6 +405,10 @@ class MorphAnalyzer:
         return resolved
 
     def _lookup_stem_raw(self, candidate: str, allow_morphophonology: bool = True) -> Optional[str]:
+        # Atomic so'zlar (qayta, lekin...) qisqa o'zak sifatida ishtimol
+        # bo'linishiga yo'l qo'ymaymiz — ular faqat butun so'z bo'la oladi.
+        if candidate in self._ATOMIC_WORDS and len(candidate) <= 4:
+            return None
         if candidate in self.dictionary:
             return candidate
 
@@ -694,6 +724,18 @@ class MorphAnalyzer:
         # O'zak infinitiv bazasi bilan aniq mos kelsa (bil, o'qi, kel) — bonus
         if is_found and self._is_infinitive_base(root):
             score += 0.06
+        # Fe'l shakl qo'shimchalari (zamon/sifatdosh/shaxs) ketma-ketligi:
+        # +di/+gan/+man/-siz/-yotgan kabi aniq fe'l qo'shimchalari zanjirida
+        # bo'linishni mukofotlaymiz ('qoladi -> qo+la+di' kabi soxta kesimlar
+        # 'qol+adi' variantidan pastda qolsin).
+        _VERBY = {"di", "di", "gan", "kan", "moq", "yotgan", "ayotgan", "oyotgan",
+                  "man", "miz", "siz", "san", "sz", "ar", "or", "may", "mas",
+                  "ding", "tigan", "adigan", "ishi", "ib", "lab", "lib", "yb"}
+        verb_chain = sum(1 for s in suffixes if s.text in _VERBY)
+        if verb_chain >= 2:
+            score += 0.05 * verb_chain
+        elif verb_chain == 1 and num_suffixes >= 1:
+            score += 0.03
         # Uzun, tartibga mos zanjirlarni qo'shimcha mukofotlaymiz
         if num_suffixes >= 4:
             score += 0.10
