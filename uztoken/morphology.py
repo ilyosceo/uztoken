@@ -92,19 +92,25 @@ _MORPHOPHONOLOGICAL_MAP: Dict[str, str] = {
 # Fe'l o'zaklarining infinitiv (-moq) shakli — lug'atda fe'llar ko'pincha
 # "-moq" bilan saqlangan (o'qimoq, bilmoq, kelmoq). Ayrim qo'shimchalardan
 # oldin infinitiv qisqaradi: o'qimoq -> o'qi-, bilmoq -> bil-, yugurmoq -> yugur-
+_REGISTRY_DICTIONARY = None  # MorphAnalyzer yaratilganda shu lug'at ro'yxatdan o'tadi
+
+
 _INFINITIVE_VERBS: Optional[Set[str]] = None
 
 
 def _get_infinitive_verbs() -> Set[str]:
+    """Infinitiv (-moq) shaklidagi o'zaklar. Natija lazimi va bir marta hisoblanadi;
+    lug'atni alohida yuklamaydi — chaqiruvchi tomondan berilgan bo'lsa ishlatadi."""
     global _INFINITIVE_VERBS
     if _INFINITIVE_VERBS is None:
-        try:
-            from .dictionary import Dictionary
-            d = Dictionary()
-            d.load_hunspell()
-            stems = set(d.stems)
-        except Exception:
-            stems = set()
+        if _REGISTRY_DICTIONARY is not None:
+            stems = set(_REGISTRY_DICTIONARY.stems)
+        else:
+            try:
+                d = Dictionary()  # bundled data bilan auto-load
+                stems = set(d.stems)
+            except Exception:
+                stems = set()
         _INFINITIVE_VERBS = {s for s in stems if s.endswith("moq") and len(s) >= 5}
     return _INFINITIVE_VERBS
 
@@ -112,20 +118,63 @@ def _get_infinitive_verbs() -> Set[str]:
 _INFINITIVE_BASES: Optional[Set[str]] = None
 
 
+_VERB_BASE_CACHE: Dict[str, str] = {}
+
+
+def _build_verb_base_set(inf: str) -> Set[str]:
+    """Bir infinitivdan qisqargan o'zak shakllari: bilmoq->{bil}, o'qimoq->{o'qi,o'q}."""
+    out: Set[str] = set()
+    base = inf[:-3]
+    if len(base) < 2:
+        return out
+    out.add(base)
+    stripped = base.rstrip("i")
+    if len(stripped) >= 2:
+        out.add(stripped)
+    # konsonant bilan tugaydigan asos uchun -i shakli ham (kel -> keli emas, lekin qol->qoli yo'q;
+    # faqat 'i' bilan tugovchilar uchun i'siz variant)
+    if base.endswith("i"):
+        out.add(base[:-1])
+    return out
+
+
 def _get_infinitive_bases() -> Set[str]:
-    """Infinitivlarning qisqargan o'zak shakllari to'plami:
-    bilmoq -> {bil}, o'qimoq -> {o'qi, o'q}, yugurmoq -> {yugur}."""
+    """To'liq baza — faqat kerak bo'lsa bir marta quriladi."""
     global _INFINITIVE_BASES
     if _INFINITIVE_BASES is None:
         bases: Set[str] = set()
         for inf in _get_infinitive_verbs():
-            base = inf[:-3]
-            bases.add(base)
-            stripped = base.rstrip("i")
-            if len(stripped) >= 2:
-                bases.add(stripped)
+            bases |= _build_verb_base_set(inf)
         _INFINITIVE_BASES = _extend_bases(bases)
     return _INFINITIVE_BASES
+
+
+def _find_verb_base(candidate: str) -> Optional[str]:
+    """Tez yo'l: candidate'ni oxirgi unli va undosh chegarasidan infinitiv deb
+    taxmin qilib, lug'atda bor-yo'qligini tekshiramiz. To'liq bazani qurmaymiz."""
+    if len(candidate) < 2 or len(candidate) > 12:
+        return None
+    hit = _VERB_BASE_CACHE.get(candidate)
+    if hit is not None:
+        return hit
+    if _REGISTRY_DICTIONARY is None:
+        # ehtiyot chorasi: eski sekin yo'l
+        ok = candidate in _get_infinitive_bases()
+        return candidate if ok else None
+    dict_stems = _REGISTRY_DICTIONARY.stems
+    found = None
+    for cut in range(len(candidate), 1, -1):
+        stem = candidate[:cut]
+        if (stem + "moq") in dict_stems or (stem + "ʻmoq") in dict_stems:
+            found = candidate
+            break
+    if found is None and candidate in _EXTRA_VERB_BASES:
+        found = candidate
+    if found is not None:
+        _VERB_BASE_CACHE[candidate] = found
+    elif len(_VERB_BASE_CACHE) < 200000:
+        _VERB_BASE_CACHE[candidate] = ""
+    return found or None
 
 # Tutuq belgisi bilan yoziladigan tana so'zlar (hunspell bazasida yo'q bo'lsa qo'shiladi)
 # Infinitiv bazasida yo'q, lekin tez-tez uchraydigan fe'l shakllari
@@ -207,6 +256,9 @@ class MorphAnalyzer:
         cache_size: int = 50000,
     ):
         self.dictionary = dictionary
+        global _REGISTRY_DICTIONARY
+        if _REGISTRY_DICTIONARY is None or len(dictionary) > len(_REGISTRY_DICTIONARY):
+            _REGISTRY_DICTIONARY = dictionary
         self.max_depth = max_depth
         self.min_root_length = min_root_length
         self._cache_size = cache_size
@@ -384,7 +436,7 @@ class MorphAnalyzer:
 
     @staticmethod
     def _is_infinitive_base(candidate: str) -> bool:
-        return candidate in _get_infinitive_bases()
+        return _find_verb_base(candidate) is not None
 
     def _verb_stem_from_infinitive(self, candidate: str) -> Optional[str]:
         """Lug'atdagi infinitiv shakldan fe'l o'zakini tiklaydi:
@@ -392,10 +444,7 @@ class MorphAnalyzer:
         'oʻqi'  <- oʻqimoq ('moq' tushadi, 'i' saqlanadi: oʻqi+i... emas —
                  bu yerda 'oʻqi' ham, 'oʻq' ham qaytariladi)
         Faqat 'found=True' imkoniyati uchun, lug'atda alohida saqlanmagan bo'lsa."""
-        bases = _get_infinitive_bases()
-        if candidate in bases:
-            return candidate
-        return None
+        return _find_verb_base(candidate)
 
     def _lookup_stem(self, candidate: str, allow_morphophonology: bool = True,
                      suffixes: Optional[List[MorphToken]] = None) -> Optional[str]:
@@ -447,7 +496,8 @@ class MorphAnalyzer:
 
         # 3. Fe'l infinitividan qisqargan o'zak: 'bil' <- bilmoq, 'oʻqi' <- oʻqimoq.
         if candidate.isascii() and re.fullmatch(r"[bcdfghjklmnpqrstvwxz]*[aeiou][aeiou]*", candidate):
-            if candidate in _get_infinitive_bases():
+            vb = _find_verb_base(candidate)
+            if vb is not None:
                 return candidate
 
         # 4. O'zbekcha so'zlarda tutuq belgisi (ʼ) ko'pincha tushirib yoziladi:

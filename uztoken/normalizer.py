@@ -103,6 +103,9 @@ CYRILLIC_DIGRAPHS: Dict[str, Tuple[str, str, str]] = {
     "я": ("ya", "Ya", "YA"),
 }
 
+_RE_ANY_APOS = re.compile("['\u02bb\u02bc\u2018\u2019\u02b9\u02bf\u2032`]")
+
+
 def normalize_apostrophes_lossless(text: str) -> Tuple[str, List[Tuple[int, str]]]:
     """
     Standardize apostrophes to ʻ (U+02BB) for oʻ/gʻ and ʼ (U+02BC) for tutuq belgisi.
@@ -113,30 +116,28 @@ def normalize_apostrophes_lossless(text: str) -> Tuple[str, List[Tuple[int, str]
     if not text:
         return "", []
 
-    # Fast normalization to ascii ' just to unify processing
-    temp_chars = list(text)
-    replacements = []
-    
-    # 1. First pass: find all variants and remember their original positions
-    for i, char in enumerate(temp_chars):
-        if char in APOSTROPHE_VARIANTS:
+    # Fast path: no apostrophe variants at all -> zero work
+    if not _RE_ANY_APOS.search(text):
+        return text, []
+
+    # 1. Single pass: remember originals, map every variant to ASCII '
+    replacements: List[Tuple[int, str]] = []
+    out_chars: List[str] = []
+    for i, char in enumerate(text):
+        if char == "'" or char in APOSTROPHE_VARIANTS:
             replacements.append((i, char))
-            temp_chars[i] = "'"
-            
-    temp_text = "".join(temp_chars)
-    
+            out_chars.append("'")
+        else:
+            out_chars.append(char)
+
+    temp_text = "".join(out_chars)
+
     # 2. Rule-based application of ʻ and ʼ
-    # Rule 1: o, g, O, G + ' -> ʻ (U+02BB)
     temp_text = _RE_O_G_APOS.sub(r"\1ʻ", temp_text)
-    
-    # Rule 2: other vowels/consonants + ' -> ʼ (U+02BC)
     temp_text = _RE_TUTUQ_APOS.sub(r"\1ʼ", temp_text)
     temp_text = _RE_OTHER_APOS.sub(r"\1ʼ", temp_text)
-    
-    # Finally, any leftover ' we convert to ʼ as a fallback for tutuq belgisi inside words,
-    # or keep as ' if it's external punctuation (but for now let's just use ʼ if it's between letters)
     temp_text = re.sub(r"(?<=[a-zA-Z])'(?=[a-zA-Z])", "ʼ", temp_text)
-    
+
     return temp_text, replacements
 
 
