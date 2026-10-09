@@ -5,16 +5,14 @@ Uses a rule-based approach with suffix stripping and dictionary lookup
 to decompose Uzbek words into root + suffix chain.
 """
 
-import re
-from typing import List, Dict, Optional, Tuple, Any, Set
-from functools import lru_cache
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from .normalizer import normalize_uzbek
-    from .affixes import get_suffix_variants, get_all_affixes, AffixCategory, Affix
+    from .affixes import get_suffix_variants, AffixCategory
     from .dictionary import Dictionary
-    from .trie import SuffixTrie, DictionaryTrie
+    from .trie import SuffixTrie
 except ImportError:
     pass
 
@@ -177,10 +175,12 @@ class MorphAnalyzer:
         # 2. Dynamic alternation: -gʻ -> -q, -g -> -k
         if candidate.endswith("gʻ") or candidate.endswith("g'"):
             alt_q = candidate[:-2] + "q"
-            if alt_q in self.dictionary: return alt_q
+            if alt_q in self.dictionary:
+                return alt_q
         if candidate.endswith("g"):
             alt_k = candidate[:-1] + "k"
-            if alt_k in self.dictionary: return alt_k
+            if alt_k in self.dictionary:
+                return alt_k
 
         return None
 
@@ -195,8 +195,6 @@ class MorphAnalyzer:
             return True
             
         right_suffix = current_suffixes[-1]
-        right_category_name = right_suffix.category
-        
         right_affix_obj = right_suffix.affix_obj
         if right_affix_obj and right_affix_obj.follows is not None:
             # new_suffix must be in the follows list of right_suffix
@@ -300,12 +298,14 @@ class MorphAnalyzer:
                 )
             )
 
-        if depth >= 5: return # Limit depth for OOV
+        if depth >= 5:
+            return # Limit depth for OOV
 
         candidates = self._suffix_trie.find_suffixes(word_lower) if self._use_trie else self._find_suffixes_linear(word_lower)
         for suffix_text, suffix_data in candidates:
             remaining = word_lower[: -len(suffix_text)]
-            if len(remaining) < self.min_root_length: continue
+            if len(remaining) < self.min_root_length:
+                continue
             
             token = MorphToken(
                 text=suffix_text, affix_id=suffix_data["id"], meaning_uz=suffix_data["meaning_uz"],
@@ -313,7 +313,8 @@ class MorphAnalyzer:
                 affix_obj=suffix_data["affix_obj"]
             )
             
-            if not self._check_suffix_order(current_suffixes, token): continue
+            if not self._check_suffix_order(current_suffixes, token):
+                continue
             
             self._analyze_all_recursive_oov(remaining, original, current_suffixes + [token], results, depth + 1, max_results)
 
@@ -322,13 +323,17 @@ class MorphAnalyzer:
 
     def _compute_confidence(self, root: str, suffixes: List[MorphToken], depth: int, is_found: bool) -> float:
         score = 0.0
-        if is_found: score += 0.5
+        if is_found:
+            score += 0.5
         score += min(0.3, len(root) * 0.05)
         
         num_suffixes = len(suffixes)
-        if num_suffixes == 0: score += 0.2
-        elif num_suffixes <= 2: score += 0.15
-        elif num_suffixes <= 4: score += 0.1
+        if num_suffixes == 0:
+            score += 0.2
+        elif num_suffixes <= 2:
+            score += 0.15
+        elif num_suffixes <= 4:
+            score += 0.1
         
         # Add a tiny amount for priority to break ties (e.g. lar plural vs lar person)
         for s in suffixes:
@@ -341,6 +346,8 @@ def create_analyzer(dictionary=None, load_hunspell=True, max_depth=15, use_trie=
     if dictionary is None:
         dictionary = Dictionary()
         if load_hunspell:
-            try: dictionary.load_hunspell()
-            except Exception: pass
+            try:
+                dictionary.load_hunspell()
+            except Exception:
+                pass
     return MorphAnalyzer(dictionary=dictionary, max_depth=max_depth, use_trie=use_trie)

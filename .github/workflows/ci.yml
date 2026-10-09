@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Lint
+        if: matrix.python-version == '3.14'
+        run: ruff check --select E4,E7,E9,F uztoken/morphology.py tests/test_morphology.py
+      - name: Build wheel
+        if: matrix.python-version == '3.14'
+        run: python -m pip wheel --no-deps . --wheel-dir dist
+      - name: Install and smoke-test wheel
+        if: matrix.python-version == '3.14'
+        run: |
+          python -m pip install --no-deps --target package-check dist/*.whl
+          python -c "import sys; sys.path.insert(0, 'package-check'); import uztoken; print(uztoken.__file__)"

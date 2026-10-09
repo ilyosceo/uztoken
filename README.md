@@ -1,6 +1,6 @@
 # UzToken — O'zbek tili uchun morfologik tokenizatsiya kutubxonasi
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **UzToken** — o'zbek tili uchun maxsus ishlab chiqilgan gibrid tokenizator. U qoidalarga asoslangan morfologik tahlil bilan BPE subword tokenizatsiyasini birlashtiradi.
