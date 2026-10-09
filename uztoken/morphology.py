@@ -207,7 +207,6 @@ class MorphAnalyzer:
                     break
             
             if new_cat_enum is not None and new_cat_enum not in right_affix_obj.follows:
-                print(f"REJECTED: {new_suffix.text} ({new_cat_enum}) cannot precede {right_suffix.text} (follows={right_affix_obj.follows})")
                 return False
                 
         return True
@@ -215,9 +214,9 @@ class MorphAnalyzer:
     def _check_allomorphs(self, remaining: str, suffix_text: str) -> bool:
         """Check vowel harmony and assimilation rules."""
         if suffix_text in ["qa", "qan", "qach"]:
-            return remaining.endswith("k") or remaining.endswith("q")
+            return remaining.endswith("q")
         if suffix_text in ["ka", "kan", "kach"]:
-            return remaining.endswith("k") or remaining.endswith("q")
+            return remaining.endswith("k")
         if suffix_text in ["ga", "gan", "gach"]:
             if remaining.endswith("k") or remaining.endswith("q"):
                 return False
@@ -236,8 +235,6 @@ class MorphAnalyzer:
             return
 
         resolved_root = self._lookup_stem(word_lower, allow_morphophonology=(depth > 0))
-        if word_lower == 'maktab':
-            print(f"DEBUG: _lookup_stem('maktab') = {resolved_root}")
         if resolved_root is not None:
             valid = True
             if current_suffixes:
@@ -252,7 +249,6 @@ class MorphAnalyzer:
                         is_found=True,
                         confidence=confidence,
                     )
-                print(f"ADDED: {res}")
                 results.append(res)
 
         if depth >= self.max_depth:
