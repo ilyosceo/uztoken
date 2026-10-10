@@ -13,3 +13,8 @@ tahlilchi top-1 / oracle@8, 61 so'zli gold F1 va `encode` ko'rsatkichlari (ferti
 dan o'rgatadi (TEST ishlatilmaydi). Og'irliklar UD_Uzbek-UzUDT (CC BY-SA 4.0) ma'lumotlaridan hosil qilingan.
 Belgilar ro'yxati `uztoken/ranker.py: FEATURE_NAMES` da; ro'yxat o'zgarsa og'irliklarni qayta o'qitish shart
 (mos kelmasa ranker avtomatik o'chadi va eski ball tizimi ishlaydi).
+
+## OOV zaxira BPE
+`python benchmarks/train_bpe_fallback.py [--merges 4000]` — lug'atda yo'q so'zlar uchun kichik BPE merjlarini
+paketdagi o'zaklar ro'yxatidan (`uz_UZ_stems.txt`) o'rgatadi (tashqi korpus kerak emas). `encode()` shu
+bo'laklardan foydalanadi; `data/bpe_merges.json` yo'q bo'lsa eski harfma-harf zaxira ishlaydi.

@@ -23,6 +23,7 @@ except ImportError:
     HAS_NUMPY = False
 
 from .normalizer import normalize_uzbek, normalize_apostrophes, clean_text, cyrillic_to_latin
+from .fallback_bpe import FallbackBPE
 from .dictionary import Dictionary
 from .morphology import MorphAnalyzer, AnalysisResult, create_analyzer
 from .bpe import BPETokenizer
@@ -221,6 +222,8 @@ class UzTokenizer:
         # BPE fallback
         self._bpe = bpe
         self._bpe_trained = bpe is not None
+        # Lug'atda yo'q so'zlar uchun yo'qotishsiz BPE zaxirasi (data/bpe_merges.json; yo'q bo'lsa None)
+        self._fb = FallbackBPE.load()
 
         # Stats
         self._stats = {
@@ -414,6 +417,7 @@ class UzTokenizer:
         key = (
             len(self._dictionary),
             len(self._bpe.vocab) if (self._bpe and self._bpe.vocab) else 0,
+            len(self._fb.pieces) if self._fb else 0,
         )
         cached = getattr(self, "_vocab_cache", None)
         if cached is not None and cached[0] == key:
@@ -470,6 +474,16 @@ class UzTokenizer:
                 if bpe_tok not in vocab:
                     vocab[bpe_tok] = curr_id
                     curr_id += 1
+
+        if self._fb is not None:
+            # BPE bo'laklari so'z boshida (Ġ) va ichida (##) shaklida; mavjud o'zak/qo'shimcha
+            # tokenlari bilan mos kelsa, bir xil ID ishlatiladi.
+            for piece in self._fb.pieces:
+                for pref in ("\u0120", "##"):
+                    t = pref + piece
+                    if t not in vocab:
+                        vocab[t] = curr_id
+                        curr_id += 1
 
         self._vocab_cache = (key, vocab)
         self._vocab_inv_cache = None
@@ -544,6 +558,23 @@ class UzTokenizer:
                 return pref + sw[len(pref):].lower()
         return sw.lower()
 
+    @staticmethod
+    def _join_subwords(subs: List[str]) -> str:
+        return "".join(sw[1:] if sw.startswith("\u0120") else sw[2:] if sw.startswith("##") else sw
+                       for sw in subs)
+
+    def _fallback_subwords(self, lower: str, vocab: Dict[str, int]) -> Optional[List[str]]:
+        """Lug'atda to'liq topilmagan so'z uchun BPE bo'laklari (yo'qotishsiz) yoki None.
+        (Faqat noma'lum o'zakni BPE qilib qo'shimchalarni saqlash varianti sinaldi: foyda bermadi.)"""
+        fb = self._fb
+        if fb is None:
+            return None
+        pieces = fb.encode_word(lower)
+        if not pieces:
+            return None
+        cand = ["\u0120" + pieces[0]] + ["##" + p for p in pieces[1:]]
+        return cand if all(sw in vocab for sw in cand) else None
+
     def encode(
         self,
         text: str,
@@ -614,9 +645,11 @@ class UzTokenizer:
                 subs = [self._lower_subword(x) for x in tok.to_subwords(style="hybrid")]
                 # Morfofonologik tiklash (shahrida -> shahar+i+da) matnni o'zgartiradi:
                 # bunday so'zlar yo'qotishsizlik uchun harfma-harf kodlanadi.
-                exact = ''.join(sw[1:] if sw.startswith("\u0120") else sw[2:] if sw.startswith("##") else sw
-                                for sw in subs) == word.lower()
-                if exact and all(sw in vocab for sw in subs):
+                exact = self._join_subwords(subs) == word.lower()
+                if not (exact and all(sw in vocab for sw in subs)):
+                    subs = self._fallback_subwords(word.lower(), vocab)
+                    exact = subs is not None
+                if exact:
                     if flag == "cap":
                         ids.append(CAP)
                     elif flag == "upper":

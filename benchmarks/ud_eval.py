@@ -117,12 +117,12 @@ def main():
     ap.add_argument("--ud-dir"); ap.add_argument("--json")
     a = ap.parse_args()
     root = Path(a.ud_dir) if a.ud_dir else fetch_ud(Path.home() / ".cache" / "uztoken_ud")
-    _, dev_t = read_conllu(root / "UD_Uzbek-UzUDT" / "uz_uzudt-ud-train.conllu")
+    dev_s, dev_t = read_conllu(root / "UD_Uzbek-UzUDT" / "uz_uzudt-ud-train.conllu")
     s1, t1 = read_conllu(root / "UD_Uzbek-UT" / "uz_ut-ud-test.conllu")
     s2, t2 = read_conllu(root / "UD_Uzbek-UzUDT" / "uz_uzudt-ud-test.conllu")
     tok = create_tokenizer(load_dict=True)
     res = {"dev": seg_metrics(tok, build_pairs(dev_t)), "test": seg_metrics(tok, build_pairs(t1 + t2)),
-           "gold61_f1": gold_f1(tok), "encode_test": encode_metrics(tok, (s1 + s2)[:500])}
+           "gold61_f1": gold_f1(tok), "encode_dev": encode_metrics(tok, dev_s[:600]), "encode_test": encode_metrics(tok, (s1 + s2)[:600])}
     for k, v in res.items():
         print(k, {a: round(b, 2) if isinstance(b, float) else b for a, b in v.items()} if isinstance(v, dict) else round(v, 3))
     if a.json:
