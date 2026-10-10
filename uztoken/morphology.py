@@ -304,6 +304,7 @@ class MorphAnalyzer:
         # Qisqa soxta o'zaklarni jazolaymiz (qo+la+di emas, qol+adi kerak)
         for r in results:
             self._penalize_short_root(r)
+        results.sort(key=lambda r: r.confidence, reverse=True)  # jarimadan keyin qayta saralash
         if results:
             result = results[0]
         else:
