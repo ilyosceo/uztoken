@@ -46,6 +46,9 @@ Repository = "https://github.com/uztoken/uztoken"
 [tool.setuptools.packages.find]
 include = ["uztoken*"]
 
+[tool.setuptools.package-data]
+uztoken = ["data/*.txt", "data/*.json"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py38"

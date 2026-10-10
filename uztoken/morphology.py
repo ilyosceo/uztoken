@@ -15,6 +15,7 @@ try:
     from .affixes import get_suffix_variants, get_all_affixes, AffixCategory, Affix
     from .dictionary import Dictionary
     from .trie import SuffixTrie, DictionaryTrie
+    from .ranker import CandidateRanker
 except ImportError:
     pass
 
@@ -257,8 +258,11 @@ class MorphAnalyzer:
         min_root_length: int = 2,
         use_trie: bool = True,
         cache_size: int = 50000,
+        use_ranker: bool = True,
     ):
         self.dictionary = dictionary
+        # O'rganilgan nomzod tanlagich (og'irliklar yo'q bo'lsa None: eski ball tizimi).
+        self._ranker = CandidateRanker.load() if use_ranker else None
         global _REGISTRY_DICTIONARY
         if _REGISTRY_DICTIONARY is None or len(dictionary) > len(_REGISTRY_DICTIONARY):
             _REGISTRY_DICTIONARY = dictionary
@@ -309,6 +313,8 @@ class MorphAnalyzer:
         results.sort(key=lambda r: r.confidence, reverse=True)  # jarimadan keyin qayta saralash
         if results:
             result = results[0]
+            if self._ranker is not None and len(results) > 1:
+                result = self._ranker.best(word_lower, results, self.dictionary.stems)
         else:
             result = AnalysisResult(original=word, root=word_lower, is_found=False, confidence=0.0)
 
