@@ -163,11 +163,12 @@ def _find_verb_base(candidate: str) -> Optional[str]:
         return candidate if ok else None
     dict_stems = _REGISTRY_DICTIONARY.stems
     found = None
-    for cut in range(len(candidate), 1, -1):
-        stem = candidate[:cut]
-        if (stem + "moq") in dict_stems or (stem + "ʻmoq") in dict_stems:
-            found = candidate
-            break
+    # Faqat candidate'ning o'zi infinitiv asosi bo'lsa qabul qilamiz: bil <- bilmoq,
+    # oʻqi <- oʻqimoq, oʻq <- oʻqimoq. Ilgari candidate'ning ISTALGAN boshlang'ich
+    # qismi + "moq" lug'atda bo'lsa (yurakni -> yu+moq, berasan -> ber+moq) butun
+    # so'z "fe'l asosi" deb topilib, to'g'ri bo'linishni yengib ketardi.
+    if (candidate + "moq") in dict_stems or (candidate + "imoq") in dict_stems:
+        found = candidate
     if found is None and candidate in _EXTRA_VERB_BASES:
         found = candidate
     if found is not None:
