@@ -22,7 +22,7 @@ try:
 except ImportError:
     HAS_NUMPY = False
 
-from .normalizer import normalize_uzbek, normalize_apostrophes, clean_text
+from .normalizer import normalize_uzbek, normalize_apostrophes, clean_text, cyrillic_to_latin
 from .dictionary import Dictionary
 from .morphology import MorphAnalyzer, AnalysisResult, create_analyzer
 from .bpe import BPETokenizer
@@ -48,6 +48,9 @@ _TOKENIZE_PATTERN = re.compile(
     """,
     re.VERBOSE | re.UNICODE,
 )
+
+
+_RE_CYRILLIC = re.compile("[\u0400-\u04FF]")
 
 
 @dataclass
@@ -408,12 +411,27 @@ class UzTokenizer:
         - Morphological roots (Ġmaktab, Ġkitob, etc.)
         - BPE subwords (if trained)
         """
+        key = (
+            len(self._dictionary),
+            len(self._bpe.vocab) if (self._bpe and self._bpe.vocab) else 0,
+        )
+        cached = getattr(self, "_vocab_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+
         vocab = {
             "<pad>": 0,
             "<unk>": 1,
             "<s>": 2,
             "</s>": 3,
             "<mask>": 4,
+            # encode() yordamchi belgilari: <cap> keyingi so'z bosh harf bilan,
+            # <upper> to'liq katta harf bilan, <nsp> oldidagi belgi bilan probelsiz
+            # tutashgan so'z, <w> lug'atda yo'q (harfma-harf kodlangan) so'z boshi.
+            "<cap>": 5,
+            "<upper>": 6,
+            "<nsp>": 7,
+            "<w>": 8,
         }
         curr_id = len(vocab)
 
@@ -453,6 +471,8 @@ class UzTokenizer:
                     vocab[bpe_tok] = curr_id
                     curr_id += 1
 
+        self._vocab_cache = (key, vocab)
+        self._vocab_inv_cache = None
         return vocab
 
     def save_vocab_json(self, filepath: str) -> Dict[str, int]:
@@ -487,118 +507,223 @@ class UzTokenizer:
             self._char_vocab_cache = cv
         return cv
 
+    _BYTE_BASE = 2_000_000
+
     def _encode_charstring(self, s: str) -> List[int]:
+        """Harfma-harf kodlash. Belgi _CHAR_TOKENS da bo'lmasa (kirill, emoji, ...)
+        UTF-8 baytlari ID = 2_000_000 + bayt sifatida kodlanadi (yo'qotishsiz)."""
         cv = self._char_vocab()
-        fallback = cv[" "]
-        return [cv.get(ch, fallback) for ch in s]
+        ids: List[int] = []
+        for ch in s:
+            cid = cv.get(ch)
+            if cid is not None:
+                ids.append(cid)
+            else:
+                ids.extend(self._BYTE_BASE + b for b in ch.encode("utf-8"))
+        return ids
 
-    def encode(self, text: str, style: str = "hybrid") -> List[int]:
-        """Encode text to numeric token IDs using the unified vocabulary.
+    @staticmethod
+    def _case_flag(word: str) -> Optional[str]:
+        """'cap' (Toshkent), 'upper' (TOSHKENT), None (toshkent) yoki 'mixed' (iPhone).
+        str.istitle() ishlatilmaydi: u 'Oʻzbek' ni noto'g'ri baholaydi (ʻ — kichik harf emas)."""
+        letters = [c for c in word if c.isalpha()]
+        if not letters or word.islower():
+            return None
+        if len(letters) > 1 and word.isupper():
+            return "upper"
+        if word[0].isupper() and word[1:].islower():
+            return "cap"
+        if len(word) == 1 and word.isupper():
+            return "cap"
+        return "mixed"
 
-        Morphological subwords (``\u0120root``, ``##suffix``) map directly to their
-        vocabulary IDs when present. Anything missing from the vocabulary
-        (capitalized surface roots like ``\u0120Maktab`` vs. lowercase entry
-        ``\u0120maktab``, Uzbek apostrophe variants ``\u02bb``/``'``, unknown words) is
-        encoded through a lossless character-level sub-vocabulary (IDs >= 1e6),
-        so ``decode(encode(text)) == text`` always holds exactly.
+    @staticmethod
+    def _lower_subword(sw: str) -> str:
+        for pref in ("\u0120", "##"):
+            if sw.startswith(pref):
+                return pref + sw[len(pref):].lower()
+        return sw.lower()
+
+    def encode(
+        self,
+        text: str,
+        style: str = "hybrid",
+        canonical_apostrophes: bool = True,
+        transliterate_cyrillic: bool = True,
+    ) -> List[int]:
+        """Matnni token ID larga aylantiradi (``decode`` bilan qaytariladi).
+
+        Kodlash sxemasi (yo'qotishsiz, kam tokenli):
+        - Lug'atdagi so'zlar morfemalarga bo'linadi: ``Ġroot``, ``##suffix``.
+        - Bosh harf ``<cap>``, to'liq katta harf ``<upper>`` belgisi bilan beriladi;
+          so'zning o'zi kichik harfda qidiriladi (Toshkent, TOSHKENT lug'atga tushadi).
+        - Oddiy bitta probel alohida token emas: so'z boshi (``Ġ``) probelni anglatadi.
+          Boshqa bo'shliqlar (yangi qator, ikkita probel, ...) va so'z oldidagi
+          tutashuv (``(kitob``) ``<nsp>`` / belgi tokenlari bilan saqlanadi.
+        - Lug'atda yo'q so'z ``<w>`` + harflar (kerak bo'lsa UTF-8 baytlar) bo'ladi.
+
+        Args:
+            style: moslik uchun saqlangan; lug'at doim 'hybrid' (Ġroot, ##suffix).
+            canonical_apostrophes: True bo'lsa barcha apostrof variantlari
+                (' ’ ‘ ʼ ` ...) bitta kanonik shaklga (ʻ / ʼ) keltiriladi — bir xil
+                so'z bir xil tokenlar beradi; ``decode`` kanonik shaklni qaytaradi.
+                False bo'lsa apostrofi o'zgargan so'zlar harfma-harf saqlanadi.
+            transliterate_cyrillic: True bo'lsa kirill matn avval lotinga o'giriladi
+                (``decode`` lotin matnni qaytaradi). False bo'lsa kirill baytlar bilan
+                saqlanadi (to'liq yo'qotishsiz, lekin juda qimmat).
         """
         vocab = self.build_unified_vocab()
+        CAP, UPPER, NSP, WSTART = vocab["<cap>"], vocab["<upper>"], vocab["<nsp>"], vocab["<w>"]
+        if transliterate_cyrillic and _RE_CYRILLIC.search(text):
+            text = cyrillic_to_latin(text)
+        norm = normalize_apostrophes(text)
+        if len(norm) != len(text):  # himoya: pozitsiyalar mos kelmasa, normallashtirmaymiz
+            norm = text
+        pieces = [(m.lastgroup, m.start(), m.end()) for m in _TOKENIZE_PATTERN.finditer(norm)]
+        n = len(pieces)
+
+        def is_word_unit(k: int) -> bool:
+            kind, st, en = pieces[k]
+            return kind == "word" and not norm[st:en].isdigit()
+
         ids: List[int] = []
         pos = 0
-        n = len(text)
-        for tok in self.tokenize(
-            text, clean=False, include_punct=True, include_spaces=True
-        ):
-            idx = text.find(tok.text, pos)
-            if idx < 0:
-                # Token text was altered by normalization (e.g. O' -> oʻ).
-                # Scan the remaining raw text and encode every character
-                # verbatim until the next token's surface form is found -
-                # this guarantees a lossless round-trip.
-                nxt = text.find(tok.text, pos + 1)
-                stop = nxt if nxt >= 0 else n
-                ids.extend(self._encode_charstring(text[pos:stop]))
-                pos = stop
+        for i, (kind, st, en) in enumerate(pieces):
+            if st > pos:  # regeks qoplamagan belgilar (himoya)
+                ids.extend(self._encode_charstring(text[pos:st]))
+            pos = en
+            raw = text[st:en]
+            if kind == "space":
+                if raw == " " and 0 < i < n - 1 and is_word_unit(i + 1):
+                    continue  # yagona probel — keyingi so'z boshi (Ġ) anglatadi
+                ids.extend(self._encode_charstring(raw))
                 continue
-            if idx > pos:
-                ids.extend(self._encode_charstring(text[pos:idx]))
-                pos = idx
-            pos = idx + len(tok.text)
-            if tok.token_type == "whitespace":
-                ids.extend(self._encode_charstring(tok.text))
+            if not is_word_unit(i):
+                ids.extend(self._encode_charstring(raw))
                 continue
-            if tok.token_type == "punctuation":
-                # Always punctuation as raw characters: keeps the surface form
-                # (e.g. "03.10.2026") reconstructable without extra spaces.
-                ids.extend(self._encode_charstring(tok.text))
+            if i > 0 and pieces[i - 1][0] != "space":
+                ids.append(NSP)
+            word = norm[st:en]
+            if not canonical_apostrophes and raw != word:
+                ids.append(WSTART)
+                ids.extend(self._encode_charstring(raw))
                 continue
-            subwords = tok.to_subwords(style=style)
-            if all(sw in vocab for sw in subwords):
-                ids.extend(vocab[sw] for sw in subwords)
-            else:
-                # Lossless fallback: encode the raw surface word char-by-char
-                ids.extend(self._encode_charstring(tok.text))
-        if pos < n:
+            flag = self._case_flag(word)
+            if flag != "mixed":
+                tok = self._process_word(word.lower())
+                subs = [self._lower_subword(x) for x in tok.to_subwords(style="hybrid")]
+                # Morfofonologik tiklash (shahrida -> shahar+i+da) matnni o'zgartiradi:
+                # bunday so'zlar yo'qotishsizlik uchun harfma-harf kodlanadi.
+                exact = ''.join(sw[1:] if sw.startswith("\u0120") else sw[2:] if sw.startswith("##") else sw
+                                for sw in subs) == word.lower()
+                if exact and all(sw in vocab for sw in subs):
+                    if flag == "cap":
+                        ids.append(CAP)
+                    elif flag == "upper":
+                        ids.append(UPPER)
+                    ids.extend(vocab[sw] for sw in subs)
+                    continue
+            ids.append(WSTART)
+            ids.extend(self._encode_charstring(word if canonical_apostrophes else raw))
+        if pos < len(text):
             ids.extend(self._encode_charstring(text[pos:]))
         return ids
 
     def decode(self, ids: List[int]) -> str:
-        """Decode token IDs back to human-readable text (lossless round-trip)."""
+        """Token ID larni matnga qaytaradi (``encode`` ning teskarisi)."""
         vocab = self.build_unified_vocab()
-        id_to_token = {v: k for k, v in vocab.items()}
-        cv_inv = {v: k for k, v in self._char_vocab().items()}
+        inv = getattr(self, "_vocab_inv_cache", None)
+        if inv is None:
+            inv = {v: k for k, v in vocab.items()}
+            self._vocab_inv_cache = inv
+        cv_inv = getattr(self, "_char_inv_cache", None)
+        if cv_inv is None:
+            cv_inv = {v: k for k, v in self._char_vocab().items()}
+            self._char_inv_cache = cv_inv
+        CAP, UPPER, NSP, WSTART = vocab["<cap>"], vocab["<upper>"], vocab["<nsp>"], vocab["<w>"]
+        skip = {vocab["<pad>"], vocab["<unk>"], vocab["<s>"], vocab["</s>"], vocab["<mask>"]}
 
         out: List[str] = []
-        pending_word = ""
-        has_pending = False
+        cur: Optional[List[str]] = None
+        flag: Optional[str] = None
+        pending: Optional[str] = None
+        nsp = False
+        bbuf = bytearray()
 
-        def flush():
-            nonlocal pending_word, has_pending
-            if not has_pending:
-                return
-            piece = pending_word
-            pending_word = ""
-            has_pending = False
-            if piece[0] in ".,!?:;)]}'\u02bb\u02bc":
-                out.append(piece)  # glue punctuation/apostrophe runs to prev text
-            else:
-                if out and out[-1] != " ":
-                    out.append(" ")
-                out.append(piece)
+        def last_char() -> str:
+            return out[-1][-1] if out else ""
+
+        def flush_bytes():
+            if bbuf:
+                out.append(bytes(bbuf).decode("utf-8", errors="replace"))
+                bbuf.clear()
+
+        def flush_word():
+            nonlocal cur, flag
+            if cur is not None:
+                w = "".join(cur)
+                if flag == "cap":
+                    w = w[:1].upper() + w[1:]
+                elif flag == "upper":
+                    w = w.upper()
+                if w:
+                    out.append(w)
+                cur, flag = None, None
+
+        def start_word():
+            nonlocal nsp
+            lc = last_char()
+            if lc and not lc.isspace() and not nsp:
+                out.append(" ")
+            nsp = False
 
         for i in ids:
+            if i >= self._BYTE_BASE:
+                flush_word()
+                bbuf.append(i - self._BYTE_BASE)
+                continue
+            flush_bytes()
             if i >= 1_000_000:
                 ch = cv_inv.get(i)
-                if ch is None:
-                    continue
-                if ch == " ":
-                    flush()
-                    out.append(" ")
-                else:
-                    pending_word += ch
-                    has_pending = True
+                if ch is not None:
+                    flush_word()
+                    out.append(ch)
                 continue
-            tok = id_to_token.get(i, "")
-            if not tok or tok in ("<pad>", "<unk>", "<s>", "</s>", "<mask>"):
+            if i in skip:
+                continue
+            if i == CAP or i == UPPER:
+                flush_word()
+                pending = "cap" if i == CAP else "upper"
+                continue
+            if i == NSP:
+                flush_word()
+                nsp = True
+                continue
+            if i == WSTART:
+                flush_word()
+                start_word()
+                continue
+            tok = inv.get(i)
+            if not tok:
                 continue
             if tok.startswith("\u0120"):
-                flush()
-                pending_word = tok[1:]
-                has_pending = True
+                flush_word()
+                start_word()
+                cur, flag, pending = [tok[1:]], pending, None
             elif tok.startswith("##"):
-                if has_pending:
-                    pending_word += tok[2:]
+                if cur is not None:
+                    cur.append(tok[2:])
                 else:
                     out.append(tok[2:])
             else:
-                flush()
-                if len(tok) == 1 and tok in ".,!?:;)]}":
+                flush_word()
+                if len(tok) == 1 and not tok.isalnum():
                     out.append(tok)
                 else:
-                    if out and out[-1] != " ":
-                        out.append(" ")
+                    start_word()
                     out.append(tok)
-        flush()
+        flush_word()
+        flush_bytes()
         return "".join(out)
 
     # ============================================================
