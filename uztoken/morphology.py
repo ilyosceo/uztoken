@@ -156,7 +156,9 @@ def _find_verb_base(candidate: str) -> Optional[str]:
         return None
     hit = _VERB_BASE_CACHE.get(candidate)
     if hit is not None:
-        return hit
+        # Rad etilgan nomzod keshda "" bo'lib turadi: uni None deb qaytarish shart, aks holda
+        # takroriy so'zlarga bo'sh o'zakli soxta tahlil ('' , is_found=True) qo'shilardi.
+        return hit or None
     if _REGISTRY_DICTIONARY is None:
         # ehtiyot chorasi: eski sekin yo'l
         ok = candidate in _get_infinitive_bases()

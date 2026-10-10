@@ -1,0 +1,29 @@
+{
+  "dev": {
+    "n_inflected": 1284,
+    "n_roots": 599,
+    "boundary_and_root_intact": 61.21495327102804,
+    "boundary_hit": 71.49532710280374,
+    "root_intact": 84.65732087227414,
+    "root_top1": 61.137071651090345,
+    "root_oracle8": 79.67289719626169,
+    "uninflected_unsplit": 81.96994991652755
+  },
+  "test": {
+    "n_inflected": 2127,
+    "n_roots": 1281,
+    "boundary_and_root_intact": 66.94875411377527,
+    "boundary_hit": 77.85613540197461,
+    "root_intact": 85.1433944522802,
+    "root_top1": 66.94875411377527,
+    "root_oracle8": 85.89562764456981,
+    "uninflected_unsplit": 81.9672131147541
+  },
+  "gold61_f1": 0.8658008658008658,
+  "encode_test": {
+    "sentences": 500,
+    "fertility": 2.8382646941223513,
+    "sentences_per_sec": 319.82592482393693,
+    "roundtrip_exact_pct": 100.0
+  }
+}
